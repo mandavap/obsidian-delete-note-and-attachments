@@ -161,7 +161,7 @@ class ConfirmDeleteModal extends Modal {
 }
 
 export default class DeleteNoteAndAttachmentsPlugin extends Plugin {
-	async onload() {
+	onload() {
 		// Register file menu event (right-click on file in explorer)
 		this.registerEvent(
 			this.app.workspace.on("file-menu", (menu, file) => {
