@@ -16,13 +16,13 @@ interface AttachmentInfo {
 class ConfirmDeleteModal extends Modal {
 	private attachments: AttachmentInfo[];
 	private noteFile: TFile;
-	private onConfirm: (deleteShared: boolean) => void;
+	private onConfirm: (deleteShared: boolean) => Promise<void>;
 
 	constructor(
 		app: App,
 		noteFile: TFile,
 		attachments: AttachmentInfo[],
-		onConfirm: (deleteShared: boolean) => void
+		onConfirm: (deleteShared: boolean) => Promise<void>
 	) {
 		super(app);
 		this.noteFile = noteFile;
@@ -33,8 +33,9 @@ class ConfirmDeleteModal extends Modal {
 	onOpen() {
 		const { contentEl } = this;
 		contentEl.empty();
+		contentEl.addClass("delete-note-attachments-modal");
 
-		contentEl.createEl("h2", { text: "Delete Note and Attachments" });
+		contentEl.createEl("h2", { text: "Delete note and attachments" });
 
 		const uniqueAttachments = this.attachments.filter((a) => !a.isShared);
 		const sharedAttachments = this.attachments.filter((a) => a.isShared);
@@ -66,30 +67,26 @@ class ConfirmDeleteModal extends Modal {
 				li.createSpan({ text: a.file.name + " — " });
 				
 				// Add "show usage" link
-				const showUsageLink = li.createEl("span", {
+				const showUsageLink = li.createEl("a", {
 					text: `used by ${a.usedBy.length} other note(s)`,
+					href: "#",
+					cls: "dna-clickable-link",
 				});
-				showUsageLink.style.cursor = "pointer";
-				showUsageLink.style.color = "var(--text-accent)";
-				showUsageLink.style.textDecoration = "underline";
 				
 				// Create the usage list (hidden by default)
-				const usageList = li.createEl("ul", { cls: "attachment-usage-list" });
-				usageList.style.display = "none";
-				usageList.style.marginTop = "4px";
+				const usageList = li.createEl("ul", { cls: "dna-usage-list dna-hidden" });
 				
 				a.usedBy.forEach((usedByFile) => {
 					const usageLi = usageList.createEl("li");
-					const link = usageLi.createEl("span", {
+					const link = usageLi.createEl("a", {
 						text: usedByFile.basename,
+						href: "#",
+						cls: "dna-clickable-link",
 					});
-					link.style.cursor = "pointer";
-					link.style.color = "var(--text-accent)";
-					link.style.textDecoration = "underline";
 					link.addEventListener("click", (e) => {
 						e.preventDefault();
 						this.close();
-						this.app.workspace.openLinkText(usedByFile.path, "", false);
+						void this.app.workspace.openLinkText(usedByFile.path, "", false);
 					});
 				});
 				
@@ -98,7 +95,11 @@ class ConfirmDeleteModal extends Modal {
 				showUsageLink.addEventListener("click", (e) => {
 					e.preventDefault();
 					isExpanded = !isExpanded;
-					usageList.style.display = isExpanded ? "block" : "none";
+					if (isExpanded) {
+						usageList.removeClass("dna-hidden");
+					} else {
+						usageList.addClass("dna-hidden");
+					}
 					showUsageLink.textContent = isExpanded 
 						? "hide" 
 						: `used by ${a.usedBy.length} other note(s)`;
@@ -117,35 +118,40 @@ class ConfirmDeleteModal extends Modal {
 						.setButtonText("Delete note + unique attachments")
 						.onClick(() => {
 							this.close();
-							this.onConfirm(false);
+							void this.onConfirm(false);
 						})
 				)
 				.addButton((btn) =>
 					btn
-						.setButtonText("Delete ALL (including shared)")
+						.setButtonText("Delete all (including shared)")
 						.setWarning()
 						.onClick(() => {
 							this.close();
-							this.onConfirm(true);
+							void this.onConfirm(true);
 						})
+				)
+				.addButton((btn) =>
+					btn.setButtonText("Cancel").onClick(() => {
+						this.close();
+					})
 				);
 		} else {
-			new Setting(buttonContainer).addButton((btn) =>
-				btn
-					.setButtonText("Delete")
-					.setWarning()
-					.onClick(() => {
+			new Setting(buttonContainer)
+				.addButton((btn) =>
+					btn
+						.setButtonText("Delete")
+						.setWarning()
+						.onClick(() => {
+							this.close();
+							void this.onConfirm(false);
+						})
+				)
+				.addButton((btn) =>
+					btn.setButtonText("Cancel").onClick(() => {
 						this.close();
-						this.onConfirm(false);
 					})
-			);
+				);
 		}
-
-		new Setting(buttonContainer).addButton((btn) =>
-			btn.setButtonText("Cancel").onClick(() => {
-				this.close();
-			})
-		);
 	}
 
 	onClose() {
@@ -155,7 +161,7 @@ class ConfirmDeleteModal extends Modal {
 }
 
 export default class DeleteNoteAndAttachmentsPlugin extends Plugin {
-	onload() {
+	async onload() {
 		// Register file menu event (right-click on file in explorer)
 		this.registerEvent(
 			this.app.workspace.on("file-menu", (menu, file) => {
@@ -166,7 +172,7 @@ export default class DeleteNoteAndAttachmentsPlugin extends Plugin {
 							.setIcon("trash-2")
 							.setSection("danger")
 							.onClick(() => {
-								this.deleteNoteWithAttachments(file);
+								void this.deleteNoteWithAttachments(file);
 							});
 					});
 				}
@@ -180,7 +186,7 @@ export default class DeleteNoteAndAttachmentsPlugin extends Plugin {
 				const activeFile = this.app.workspace.getActiveFile();
 				if (activeFile && activeFile.extension === "md") {
 					if (!checking) {
-						this.deleteNoteWithAttachments(activeFile);
+						void this.deleteNoteWithAttachments(activeFile);
 					}
 					return true;
 				}
@@ -284,7 +290,7 @@ export default class DeleteNoteAndAttachmentsPlugin extends Plugin {
 	/**
 	 * Delete a note and its attachments
 	 */
-	private deleteNoteWithAttachments(file: TFile) {
+	private async deleteNoteWithAttachments(file: TFile): Promise<void> {
 		const attachments = this.getAttachments(file);
 
 		// Check which attachments are shared and get usage info
@@ -299,7 +305,7 @@ export default class DeleteNoteAndAttachmentsPlugin extends Plugin {
 
 		if (attachmentInfo.length === 0) {
 			// No attachments, just delete the note
-			this.app.vault.trash(file, true);
+			await this.app.fileManager.trashFile(file);
 			new Notice(`Deleted "${file.basename}"`);
 			return;
 		}
@@ -309,31 +315,30 @@ export default class DeleteNoteAndAttachmentsPlugin extends Plugin {
 			this.app,
 			file,
 			attachmentInfo,
-			(deleteShared: boolean) => {
+			async (deleteShared: boolean): Promise<void> => {
 				let deletedCount = 0;
 
 				// Delete attachments
 				for (const info of attachmentInfo) {
 					if (!info.isShared || deleteShared) {
-						try {
-							this.app.vault.trash(info.file, true);
-							deletedCount++;
-						} catch (e) {
-							console.error(`Failed to delete ${info.file.path}:`, e);
-						}
+						await this.app.fileManager.trashFile(info.file).catch((e: unknown) => {
+						  if (e instanceof Error) {
+						   console.error(`Failed to delete ${info.file.path}:`, e.message);
+						  }
+						 });
+						deletedCount++;
 					}
 				}
 
 				// Delete the note
-				try {
-					this.app.vault.trash(file, true);
-					new Notice(
-						`Deleted "${file.basename}" and ${deletedCount} attachment(s)`
-					);
-				} catch (e) {
-					console.error(`Failed to delete ${file.path}:`, e);
+				await this.app.fileManager.trashFile(file).catch((e: unknown) => {
+					if (e instanceof Error) {
+						console.error(`Failed to delete ${file.path}:`, e.message);
+					}
 					new Notice(`Failed to delete "${file.basename}"`);
-				}
+				});
+				
+				new Notice(`Deleted "${file.basename}" and ${deletedCount} attachment(s)`);
 			}
 		).open();
 	}

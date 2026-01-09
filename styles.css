@@ -1,0 +1,20 @@
+/* Delete Note and Attachments Plugin Styles */
+
+.delete-note-attachments-modal .dna-clickable-link {
+    cursor: pointer;
+    color: var(--text-accent);
+    text-decoration: underline;
+}
+
+.delete-note-attachments-modal .dna-clickable-link:hover {
+    color: var(--text-accent-hover);
+    text-decoration: underline;
+}
+
+.delete-note-attachments-modal .dna-usage-list {
+    margin-top: 4px;
+}
+
+.delete-note-attachments-modal .dna-usage-list.dna-hidden {
+    display: none !important;
+}
